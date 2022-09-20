@@ -6,15 +6,15 @@ namespace PostService.Models
     public class Post
     {
         [DynamoDBHashKey("id")]
-        public int? Id { get; set; }
+        public Guid Id { get; set; }
 
         [DynamoDBProperty("text")]
         public string? Text { get; set; }
 
         [DynamoDBProperty("userId")]
-        public string? UserId { get; set; }
+        public int? UserId { get; set; }
 
         [DynamoDBProperty("likes")]
-        public string? Likes { get; set; }
+        public int? Likes { get; set; }
     }
 }
