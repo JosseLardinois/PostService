@@ -42,6 +42,7 @@ public class PostsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> CreatePost(Post postRequest)
     {
+        postRequest.Id = Guid.NewGuid();
         var post = await _context.LoadAsync<Post>(postRequest.Id);
         if (post != null) return BadRequest($"Post with Id {postRequest.Id} Already Exists");
         await _context.SaveAsync(postRequest);
