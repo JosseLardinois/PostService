@@ -7,79 +7,45 @@ using Amazon.SQS;
 using System.Text.Json;
 using Amazon;
 using Microsoft.Extensions.Configuration;
-
+using PostService.Interfaces;
+using PostService.Processors;
 
 namespace DynamoStudentManager.Controllers;
 
-[Route("api/[controller]")]
-[ApiController]
-public class PostsController : ControllerBase
+[Route("[controller]")]
+public class PostsController : Controller
 {
+    //to get only posts from last 24 hours: https://www.youtube.com/watch?v=BbUmLRaxZG8&t=1s
     private IConfiguration _configuration;
-    private readonly IDynamoDBContext _context;
+    private IPostsRepository _repository;
 
-    public PostsController(IDynamoDBContext context, IConfiguration configuration)
+    public PostsController(IPostsRepository repository, IConfiguration configuration)
     {
-        _context = context;
+        _repository = repository;
         _configuration = configuration;
     }
 
-    [HttpGet("{postId}")]
-    public async Task<IActionResult> GetById(int postId)
-    {
-        var post = await _context.LoadAsync<Post>(postId);
-        if (post == null) return NotFound();
-        return Ok(post);
-    }
-
     [HttpGet]
-    public async Task<IActionResult> GetAllPosts()
+    public async Task<IEnumerable<Post>> GetAllPostsById(Guid postId)
     {
-        var post = await _context.ScanAsync<Post>(default).GetRemainingAsync();
-        return Ok(post);
+        return await _repository.All(postId);
     }
 
     [HttpPost]
-    public async Task<IActionResult> CreatePost(Post postRequest)
+    public async Task<IActionResult> CreatePost(PostInputModel model)
     {
-        postRequest.Id = Guid.NewGuid();
-        var post = await _context.LoadAsync<Post>(postRequest.Id);
-        if (post != null) return BadRequest($"Post with Id {postRequest.Id} Already Exists");
-        await _context.SaveAsync(postRequest);
-        await SQSPost(postRequest);
-        return Ok(postRequest);
+
+        await _repository.Add(model);
+        SQSProcessor processor = new SQSProcessor(_configuration);
+        await processor.SQSPost(model);
+        return Ok(model);
     }
 
-    [HttpDelete("{postId}")]
-    public async Task<IActionResult> DeletePost(int postId)
+    [HttpDelete]
+    [Route("Delete")]
+    public async Task<ActionResult> Delete(PostInputModel post)
     {
-        var post = await _context.LoadAsync<Post>(postId);
-        if (post == null) return NotFound();
-        await _context.DeleteAsync(post);
+        await _repository.Remove(post);
         return NoContent();
-    }
-
-    [HttpPut]
-    public async Task<IActionResult> UpdatePost(Post postRequest)
-    {
-        var post = await _context.LoadAsync<Post>(postRequest.Id);
-        if (post == null) return NotFound();
-        await _context.SaveAsync(postRequest);
-        return Ok(postRequest);
-    }
-
-    [HttpPost("PostSQSQueue", Name = "PostSQSQueue")]
-    public async Task SQSPost(Post postRequest)
-    {
-        var appconfig = _configuration.GetSection("AppConfig").Get<AppConfig>();
-        var credentials = new BasicAWSCredentials(appconfig.AccessKeyId, appconfig.SecretAccessKey);
-        var client = new AmazonSQSClient(credentials, RegionEndpoint.EUCentral1);
-
-        var request = new SendMessageRequest()
-        {
-            QueueUrl = appconfig.QueueUrl,
-            MessageBody = JsonSerializer.Serialize(postRequest)
-        };
-        _ = await client.SendMessageAsync(request);
     }
 }
